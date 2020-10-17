@@ -64,25 +64,30 @@ svg.addEventListener('mousemove', drag);
 svg.addEventListener('mouseup', endDrag);
 svg.addEventListener('mouseleave', endDrag);
 
-var group = document.createElementNS(svgNS, 'g');
-group.setAttribute('transform', 'translate(50,50)');
-group.setAttribute('class', 'draggable');
-svg.appendChild(group);
+const add = () => {
+    var group = document.createElementNS(svgNS, 'g');
+    group.setAttribute('transform', 'translate(50,50)');
+    group.setAttribute('class', 'draggable');
+    svg.appendChild(group);
 
-var shape = document.createElementNS(svgNS,'rect');
-shape.setAttribute('id','mycircle');
-shape.setAttribute('width','50');
-shape.setAttribute('height','50');
-shape.setAttribute('fill','transparent');
-shape.setAttribute('stroke-width', '1');
-group.appendChild(shape);
+    var shape = document.createElementNS(svgNS,'rect');
+    shape.setAttribute('id','mycircle');
+    shape.setAttribute('width','50');
+    shape.setAttribute('height','50');
+    shape.setAttribute('fill','transparent');
+    shape.setAttribute('stroke-width', '1');
+    group.appendChild(shape);
 
-var text = document.createElementNS(svgNS, 'text');
-text.setAttribute('text-anchor', 'middle');
-text.setAttribute('alignment-baseline', 'middle');
-text.setAttribute('x', '25');
-text.setAttribute('y', '25');
-text.setAttribute('width', '50');
-text.textContent = 'Misha';
-group.appendChild(text);
+    var text = document.createElementNS(svgNS, 'text');
+    text.setAttribute('text-anchor', 'middle');
+    text.setAttribute('alignment-baseline', 'middle');
+    text.setAttribute('x', '25');
+    text.setAttribute('y', '25');
+    text.setAttribute('width', '50');
+    text.textContent = 'Misha';
+    group.appendChild(text);
+};
 
+add();
+
+document.getElementById('add').addEventListener('click', add);
