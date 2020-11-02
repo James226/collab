@@ -20,7 +20,7 @@ interface Diagram {
     root: DiagramNode
 }
 
-let socket = new WebSocket("ws://127.0.0.1:3000/ws");
+let socket = new WebSocket("ws://34.107.148.107/ws");
 //let socket = new WebSocket("wss://jachaela-recipe-book.ew.r.appspot.com/ws");
 console.log("Attempting Connection...");
 
@@ -85,6 +85,10 @@ socket.onmessage = e => {
 
     reconsile(diagram);
 }
+
+setInterval(() => {
+    socket.send(JSON.stringify({ username: 'James', type: 'heartbeat' }))
+}, 10000);
 
 const findDraggableElement = (element: HTMLElement): HTMLElement | null  => {
     if (element.classList.contains('draggable')) {
