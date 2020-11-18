@@ -10,7 +10,7 @@ interface Vector2 {
 
 interface DiagramNode {
     id: string
-    children: DiagramNode[]
+    children: { [id: string] : DiagramNode; }
     x: number
     y: number
     content: string
@@ -20,7 +20,8 @@ interface Diagram {
     root: DiagramNode
 }
 
-let socket = new WebSocket("ws://34.107.148.107/ws");
+let socket = new WebSocket("ws://127.0.0.1:3000/ws");
+//let socket = new WebSocket("ws://34.107.148.107/ws");
 //let socket = new WebSocket("wss://jachaela-recipe-book.ew.r.appspot.com/ws");
 console.log("Attempting Connection...");
 
@@ -40,7 +41,7 @@ socket.onerror = error => {
 let diagram: Diagram = {
     root: {
         id: 'root',
-        children: [],
+        children: {},
         x: 0,
         y: 0,
         content: ''
@@ -53,7 +54,7 @@ socket.onmessage = e => {
         case 'translate':
             {
                 const { id, x, y } = message;
-                const node = diagram.root.children.find(n => n.id === id);
+                const node = diagram.root.children[id];
                 node.x = x;
                 node.y = y;
                 break;
@@ -62,14 +63,14 @@ socket.onmessage = e => {
         case 'add':
             {
                 const { id, x, y } = message;
-                diagram.root.children.push({ id, children: [], x, y, content: '' });
+                diagram.root.children[id] = ({ id, children: {}, x, y, content: '' });
                 break;
             }
 
         case 'setContent':
             {
                 const { id, content } = message;
-                const node = diagram.root.children.find(n => n.id === id);
+                const node = diagram.root.children[id];
                 node.content = content;
                 break;
             }
@@ -149,7 +150,7 @@ const endDrag = () => {
     const x = parseFloat(rawX);
     const y = parseFloat(rawY);
 
-    const node = diagram.root.children.find(n => n.id === id);
+    const node = diagram.root.children[id];
     node.x = x;
     node.y = y;
 
@@ -239,7 +240,7 @@ const add = (nodeId: string = null, x: number = 50, y: number = 50): Element => 
 
         textdiv.addEventListener('blur', e => {
             const content = (e.target as HTMLElement).innerText;
-            const node = diagram.root.children.find(n => n.id === id);
+            const node = diagram.root.children[id];
             node.content = content;
             group.removeChild(textEditor);
             text.setAttribute('visibility', 'visible');
@@ -275,24 +276,27 @@ const getOrCreateElement = (node: DiagramNode): Element => {
 
 const reconsile = (diagram: Diagram) => {
     root.querySelectorAll('g').forEach(element => {
-        if (diagram.root.children.findIndex(n => n.id === element.id) === -1) {
+        if (!diagram.root.children[element.id as string]) {
             root.removeChild(element);
         }
     });
 
-    diagram.root.children.forEach(node => {
-        const element = getOrCreateElement(node);
-        element.setAttribute('transform', `translate(${node.x},${node.y})`);
+    for (const id in diagram.root.children) {
+        if (Object.prototype.hasOwnProperty.call(diagram.root.children, id)) {
+            const node = diagram.root.children[id];
+            const element = getOrCreateElement(node);
+            element.setAttribute('transform', `translate(${node.x},${node.y})`);
 
-        // const textNode = element.getElementsByClassName('c-texteditor__text')[0] as HTMLElement;
-        // textNode.innerText = node.content;
-        element.querySelector('text').textContent = node.content;
-    });
+            // const textNode = element.getElementsByClassName('c-texteditor__text')[0] as HTMLElement;
+            // textNode.innerText = node.content;
+            element.querySelector('text').textContent = node.content;
+        }
+    }
 }
 
 document.getElementById('add').addEventListener('click', () => {
     const nodeId = `node${nodeCount}`;
-    diagram.root.children.push({ id: nodeId, children: [], x: 50, y: 50, content: '' });
+    diagram.root.children[nodeId] = ({ id: nodeId, children: {}, x: 50, y: 50, content: '' });
     reconsile(diagram);
     socket.send(JSON.stringify({ username: 'James', type: 'add', id: nodeId, x: 50, y: 50 }));
 });
