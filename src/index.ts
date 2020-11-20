@@ -20,35 +20,7 @@ interface Diagram {
     root: DiagramNode
 }
 
-let socket = new WebSocket("ws://127.0.0.1:3000/ws");
-//let socket = new WebSocket("ws://34.107.148.107/ws");
-//let socket = new WebSocket("wss://jachaela-recipe-book.ew.r.appspot.com/ws");
-console.log("Attempting Connection...");
-
-socket.onopen = () => {
-    console.log("Successfully Connected");
-    socket.send(JSON.stringify({username: 'James', message: 'Hello world!'}))
-};
-
-socket.onclose = event => {
-    console.log("Socket Closed Connection: ", event);
-};
-
-socket.onerror = error => {
-    console.log("Socket Error: ", error);
-};
-
-let diagram: Diagram = {
-    root: {
-        id: 'root',
-        children: {},
-        x: 0,
-        y: 0,
-        content: ''
-    }
-}
-
-socket.onmessage = e => {
+const processMessage = (e: MessageEvent<any>) => {
     const message = JSON.parse(e.data);
     switch (message.type) {
         case 'translate':
@@ -87,9 +59,56 @@ socket.onmessage = e => {
     reconsile(diagram);
 }
 
-setInterval(() => {
-    socket.send(JSON.stringify({ username: 'James', type: 'heartbeat' }))
-}, 10000);
+var client = new EventSource("https://collab-api-lyvvylp2ia-ew.a.run.app/events");
+//var client = new EventSource("https://collab-api-lyvvylp2ia-ew.a.run.app")
+client.onmessage = processMessage;
+
+// let socket = new WebSocket("ws://127.0.0.1:3000/ws");
+// //let socket = new WebSocket("ws://34.107.148.107/ws");
+// //let socket = new WebSocket("wss://jachaela-recipe-book.ew.r.appspot.com/ws");
+// console.log("Attempting Connection...");
+
+// socket.onopen = () => {
+//     console.log("Successfully Connected");
+//     socket.send(JSON.stringify({username: 'James', message: 'Hello world!'}))
+// };
+
+// socket.onclose = event => {
+//     console.log("Socket Closed Connection: ", event);
+// };
+
+// socket.onerror = error => {
+//     console.log("Socket Error: ", error);
+// };
+
+const sendData = async (data: string) => {
+    const response = await fetch("https://collab-api-lyvvylp2ia-ew.a.run.app/update", {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: data
+      });
+
+    return response;
+    //socket.send(data);
+};
+
+let diagram: Diagram = {
+    root: {
+        id: 'root',
+        children: {},
+        x: 0,
+        y: 0,
+        content: ''
+    }
+}
+
+//socket.onmessage = processMessage;
+
+// setInterval(() => {
+//     sendData(JSON.stringify({ username: 'James', type: 'heartbeat' }))
+// }, 10000);
 
 const findDraggableElement = (element: HTMLElement): HTMLElement | null  => {
     if (element.classList.contains('draggable')) {
@@ -156,7 +175,7 @@ const endDrag = () => {
 
     reconsile(diagram);
 
-    socket.send(JSON.stringify({ username: 'James', type: 'translate', id, x, y }));
+    sendData(JSON.stringify({ username: 'James', type: 'translate', id, x, y }));
 
     selectedElement.classList.remove('selected');
     selectedElement = null;
@@ -245,7 +264,7 @@ const add = (nodeId: string = null, x: number = 50, y: number = 50): Element => 
             group.removeChild(textEditor);
             text.setAttribute('visibility', 'visible');
             reconsile(diagram);
-            socket.send(JSON.stringify({ username: 'James', type: 'setContent', id, content }));
+            sendData(JSON.stringify({ username: 'James', type: 'setContent', id, content }));
         });
 
         textdiv.addEventListener('keypress', e => {
@@ -298,7 +317,7 @@ document.getElementById('add').addEventListener('click', () => {
     const nodeId = `node${nodeCount}`;
     diagram.root.children[nodeId] = ({ id: nodeId, children: {}, x: 50, y: 50, content: '' });
     reconsile(diagram);
-    socket.send(JSON.stringify({ username: 'James', type: 'add', id: nodeId, x: 50, y: 50 }));
+    sendData(JSON.stringify({ username: 'James', type: 'add', id: nodeId, x: 50, y: 50 }));
 });
 
 document.getElementById('export').addEventListener('click', () => {
