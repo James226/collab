@@ -1,7 +1,16 @@
 var svgNS = 'http://www.w3.org/2000/svg';
 
+//const apiUrl = 'https://collab-api-lyvvylp2ia-ew.a.run.app';
+const apiUrl = 'http://localhost:3000';
+
 let selectedElement: SVGGraphicsElement = null;
 let offset: Vector2 = null;
+
+const diagramId = window.location.hash ? window.location.hash.substring(2) : 'default';
+
+window.onhashchange = () => {
+    window.location.reload();
+}
 
 interface Vector2 {
     x: number;
@@ -59,7 +68,7 @@ const processMessage = (e: MessageEvent<any>) => {
     reconsile(diagram);
 }
 
-var client = new EventSource("https://collab-api-lyvvylp2ia-ew.a.run.app/events");
+var client = new EventSource(`${apiUrl}/events/${diagramId}`);
 //var client = new EventSource("https://collab-api-lyvvylp2ia-ew.a.run.app")
 client.onmessage = processMessage;
 
@@ -82,7 +91,7 @@ client.onmessage = processMessage;
 // };
 
 const sendData = async (data: string) => {
-    const response = await fetch("https://collab-api-lyvvylp2ia-ew.a.run.app/update", {
+    const response = await fetch(`${apiUrl}/update/${diagramId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
