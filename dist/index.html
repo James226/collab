@@ -17,8 +17,20 @@
         cursor: pointer;
       }
 
+      .draggable:hover > rect {
+        stroke: cyan;
+      }
+
+      .edgeHover .draggable:hover > rect {
+        stroke: red;
+      }
+
       .selected > rect {
         stroke: blue;
+      }
+
+      path {
+        stroke: black;
       }
     </style>
   </head>

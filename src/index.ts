@@ -6,6 +6,9 @@ const apiUrl = 'http://localhost:3000';
 let selectedElement: SVGGraphicsElement = null;
 let offset: Vector2 = null;
 
+let selectedLine: SVGPathElement = null;
+let fromPosition: Vector2 = null;
+
 const diagramId = window.location.hash ? window.location.hash.substring(2) : 'default';
 
 window.onhashchange = () => {
@@ -69,26 +72,7 @@ const processMessage = (e: MessageEvent<any>) => {
 }
 
 var client = new EventSource(`${apiUrl}/events/${diagramId}`);
-//var client = new EventSource("https://collab-api-lyvvylp2ia-ew.a.run.app")
 client.onmessage = processMessage;
-
-// let socket = new WebSocket("ws://127.0.0.1:3000/ws");
-// //let socket = new WebSocket("ws://34.107.148.107/ws");
-// //let socket = new WebSocket("wss://jachaela-recipe-book.ew.r.appspot.com/ws");
-// console.log("Attempting Connection...");
-
-// socket.onopen = () => {
-//     console.log("Successfully Connected");
-//     socket.send(JSON.stringify({username: 'James', message: 'Hello world!'}))
-// };
-
-// socket.onclose = event => {
-//     console.log("Socket Closed Connection: ", event);
-// };
-
-// socket.onerror = error => {
-//     console.log("Socket Error: ", error);
-// };
 
 const sendData = async (data: string) => {
     const response = await fetch(`${apiUrl}/update/${diagramId}`, {
@@ -100,7 +84,6 @@ const sendData = async (data: string) => {
       });
 
     return response;
-    //socket.send(data);
 };
 
 let diagram: Diagram = {
@@ -113,11 +96,6 @@ let diagram: Diagram = {
     }
 }
 
-//socket.onmessage = processMessage;
-
-// setInterval(() => {
-//     sendData(JSON.stringify({ username: 'James', type: 'heartbeat' }))
-// }, 10000);
 
 const findDraggableElement = (element: HTMLElement): HTMLElement | null  => {
     if (element.classList.contains('draggable')) {
@@ -137,21 +115,32 @@ const getMousePosition = (evt: MouseEvent): Vector2 => {
     };
   }
 
+const onEdge = (positionOffset: any, width: number, height: number) => {
+    return Math.abs(positionOffset.x) < 5 || Math.abs(width - positionOffset.x) < 5 || Math.abs(positionOffset.y) < 5 || Math.abs(height - positionOffset.y) < 5;
+}
+
 const startDrag = (event: MouseEvent) => {
     const target = event.target as HTMLElement;
-
     const draggableElement = findDraggableElement(target);
 
     if (!draggableElement) return;
 
-    selectedElement = draggableElement as unknown as SVGGraphicsElement;
-    draggableElement.classList.add('selected');
+    const [_, x, y] = draggableElement.getAttribute('transform').match(/translate\((\-?[\d\.]+),(\-?[\d\.]+)\)/)
 
-    const [_, x, y] = selectedElement.getAttribute('transform').match(/translate\((\-?[\d\.]+),(\-?[\d\.]+)\)/)
+    const positionOffset = getMousePosition(event);
+    positionOffset.x -= parseFloat(x);
+    positionOffset.y -= parseFloat(y);
 
-    offset = getMousePosition(event);
-    offset.x -= parseFloat(x);
-    offset.y -= parseFloat(y);
+    if (onEdge(positionOffset, 80, 40)) {
+        selectedLine = document.createElementNS(svgNS, 'path') as SVGPathElement;
+        fromPosition = {x: parseFloat(x), y: parseFloat(y)};
+        root.appendChild(selectedLine);
+    } else {
+        selectedElement = draggableElement as unknown as SVGGraphicsElement;
+        offset = positionOffset;
+    
+        draggableElement.classList.add('selected');
+    }
 };
 
 const largeSnap = 40;
@@ -166,28 +155,64 @@ const drag = (event: MouseEvent) => {
         const x = Math.round((coord.x - offset.x)/snap)*snap;
         const y = Math.round((coord.y - offset.y)/snap)*snap;
         selectedElement.setAttribute('transform', `translate(${x},${y})`);
+        return;
+    }
+
+    if (selectedLine) {
+        var coord = getMousePosition(event);
+        const snap = event.shiftKey ? largeSnap : event.ctrlKey ? noSnap : defaultSnap;
+        const x = Math.round(coord.x/snap)*snap;
+        const y = Math.round(coord.y/snap)*snap;
+
+        selectedLine.setAttribute('d', `M${fromPosition.x} ${fromPosition.y} L${x} ${fromPosition.y} M${x} ${fromPosition.y} L${x} ${y}`)
+        return;
+    }
+
+    const target = event.target as HTMLElement;
+    const draggableElement = findDraggableElement(target);
+
+    if (!draggableElement) {
+        svg.classList.remove('edgeHover');
+        return;
+    }
+
+    const [_, x, y] = draggableElement.getAttribute('transform').match(/translate\((\-?[\d\.]+),(\-?[\d\.]+)\)/)
+
+    const positionOffset = getMousePosition(event);
+    positionOffset.x -= parseFloat(x);
+    positionOffset.y -= parseFloat(y);
+
+    if (onEdge(positionOffset, 80, 40)) {
+        svg.classList.add('edgeHover');
+    } else {
+        svg.classList.remove('edgeHover');
     }
 };
 
 const endDrag = () => {
-    if (!selectedElement) return;
+    if (selectedElement) {
+        const [_, rawX, rawY] = selectedElement.getAttribute('transform').match(/translate\((\-?[\d\.]+),(\-?[\d\.]+)\)/)
+        const id = selectedElement.id;
 
-    const [_, rawX, rawY] = selectedElement.getAttribute('transform').match(/translate\((\-?[\d\.]+),(\-?[\d\.]+)\)/)
-    const id = selectedElement.id;
+        const x = parseFloat(rawX);
+        const y = parseFloat(rawY);
 
-    const x = parseFloat(rawX);
-    const y = parseFloat(rawY);
+        const node = diagram.root.children[id];
+        node.x = x;
+        node.y = y;
 
-    const node = diagram.root.children[id];
-    node.x = x;
-    node.y = y;
+        reconsile(diagram);
 
-    reconsile(diagram);
+        sendData(JSON.stringify({ username: 'James', type: 'translate', id, x, y }));
 
-    sendData(JSON.stringify({ username: 'James', type: 'translate', id, x, y }));
+        selectedElement.classList.remove('selected');
+        selectedElement = null;
+    }
 
-    selectedElement.classList.remove('selected');
-    selectedElement = null;
+    
+    if (selectedLine) {
+        selectedLine = null;
+    }
 };
 
 const svg = document.getElementById('canvas') as unknown as SVGGraphicsElement;
@@ -211,7 +236,6 @@ const add = (nodeId: string = null, x: number = 50, y: number = 50): Element => 
     root.appendChild(group);
 
     var shape = document.createElementNS(svgNS,'rect');
-    shape.setAttribute('id','mycircle');
     shape.setAttribute('width','80');
     shape.setAttribute('height','40');
     shape.setAttribute('fill','white');
