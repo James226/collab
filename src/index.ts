@@ -1,13 +1,15 @@
+import { nanoid } from "../node_modules/nanoid/index";
+
 var svgNS = 'http://www.w3.org/2000/svg';
 
 //const apiUrl = 'https://collab-api-lyvvylp2ia-ew.a.run.app';
 const apiUrl = 'http://localhost:3000';
 
 let selectedElement: SVGGraphicsElement = null;
+let selectedNode: DiagramNode = null;
 let offset: Vector2 = null;
 
-let selectedLine: SVGPathElement = null;
-let fromPosition: Vector2 = null;
+let selectedLine: DiagramConnectorNode = null;
 
 const diagramId = window.location.hash ? window.location.hash.substring(2) : 'default';
 
@@ -23,9 +25,16 @@ interface Vector2 {
 interface DiagramNode {
     id: string
     children: { [id: string] : DiagramNode; }
+    connectors: { [id: string] : DiagramConnectorNode }
     x: number
     y: number
     content: string
+}
+
+interface DiagramConnectorNode {
+    id: string
+    from: DiagramNode | Vector2
+    to: DiagramNode | Vector2
 }
 
 interface Diagram {
@@ -47,7 +56,7 @@ const processMessage = (e: MessageEvent<any>) => {
         case 'add':
             {
                 const { id, x, y } = message;
-                diagram.root.children[id] = ({ id, children: {}, x, y, content: '' });
+                diagram.root.children[id] = ({ id, children: {}, x, y, content: '', connectors: {} });
                 break;
             }
 
@@ -59,9 +68,37 @@ const processMessage = (e: MessageEvent<any>) => {
                 break;
             }
 
+        case 'addConnector':
+            {
+                const { id, from, to } = message;
+
+                const connector = { id, from, to };
+
+                if ('id' in connector.from) {
+                    connector.from = diagram.root.children[connector.from.id];
+                }
+                if ('id' in connector.to) {
+                    connector.to = diagram.root.children[connector.to.id];
+                }
+                
+                diagram.root.connectors[id] = connector;
+                break;
+            }
+
         case 'diagram':
             {
                 diagram = message.diagram;
+                for (const id in diagram.root.connectors) {
+                    if (Object.prototype.hasOwnProperty.call(diagram.root.connectors, id)) {
+                        const connector = diagram.root.connectors[id];
+                        if ('id' in connector.from) {
+                            connector.from = diagram.root.children[connector.from.id];
+                        }
+                        if ('id' in connector.to) {
+                            connector.to = diagram.root.children[connector.to.id];
+                        }
+                    }
+                }
                 break;
             }
         default:
@@ -92,7 +129,8 @@ let diagram: Diagram = {
         children: {},
         x: 0,
         y: 0,
-        content: ''
+        content: '',
+        connectors: {}
     }
 }
 
@@ -107,6 +145,35 @@ const findDraggableElement = (element: HTMLElement): HTMLElement | null  => {
     return findDraggableElement(element.parentElement);
 }
 
+const getPath = (element: HTMLElement): string[] | null  => {
+    const path = [];
+    path.push(element.id);
+
+    let parent = element.parentElement;
+    while (parent !== root as any && parent != null) {
+        path.unshift(parent.id);
+        parent = parent.parentElement;
+
+    }
+    
+    return path;
+}
+
+const getNodeForPath = (path: string[]): DiagramNode | null => {
+    let position = diagram.root;
+
+    for (let i = 0; i < path.length; i++) {
+        position = position.children[path[i]];
+    }
+
+    return position;   
+}
+
+const getNodeForElement = (element: HTMLElement): DiagramNode | null => {
+    const path = getPath(element);
+    return getNodeForPath(path);
+}
+
 const getMousePosition = (evt: MouseEvent): Vector2 => {
     var CTM = svg.getScreenCTM();
     return {
@@ -116,7 +183,7 @@ const getMousePosition = (evt: MouseEvent): Vector2 => {
   }
 
 const onEdge = (positionOffset: any, width: number, height: number) => {
-    return Math.abs(positionOffset.x) < 5 || Math.abs(width - positionOffset.x) < 5 || Math.abs(positionOffset.y) < 5 || Math.abs(height - positionOffset.y) < 5;
+    return Math.abs(positionOffset.x + width/2) < 5 || Math.abs(positionOffset.x - width/2) < 5 || Math.abs(positionOffset.y + height/2) < 5 || Math.abs(positionOffset.y - height/2) < 5;
 }
 
 const startDrag = (event: MouseEvent) => {
@@ -125,17 +192,36 @@ const startDrag = (event: MouseEvent) => {
 
     if (!draggableElement) return;
 
+    const path = getPath(draggableElement);
+    const node = getNodeForPath(path);
     const [_, x, y] = draggableElement.getAttribute('transform').match(/translate\((\-?[\d\.]+),(\-?[\d\.]+)\)/)
 
     const positionOffset = getMousePosition(event);
-    positionOffset.x -= parseFloat(x);
-    positionOffset.y -= parseFloat(y);
+    positionOffset.x -= node.x;
+    positionOffset.y -= node.y;
 
     if (onEdge(positionOffset, 80, 40)) {
-        selectedLine = document.createElementNS(svgNS, 'path') as SVGPathElement;
-        fromPosition = {x: parseFloat(x), y: parseFloat(y)};
-        root.appendChild(selectedLine);
+        const parentPath = path.slice(0, -1);
+        const parent = getNodeForPath(parentPath);
+
+        var coord = getMousePosition(event);
+        const snap = event.shiftKey ? largeSnap : event.ctrlKey ? noSnap : defaultSnap;
+        const x = Math.round(coord.x/snap)*snap;
+        const y = Math.round(coord.y/snap)*snap;
+        
+        const connector: DiagramConnectorNode = {
+            id: nanoid().replace('-', '.'),
+            from: node,
+            to: { x, y }
+        }
+
+        selectedLine = connector;
+
+        if (!parent.connectors) parent.connectors = {};
+
+        parent.connectors[connector.id] = connector;
     } else {
+        selectedNode = node;
         selectedElement = draggableElement as unknown as SVGGraphicsElement;
         offset = positionOffset;
     
@@ -154,17 +240,32 @@ const drag = (event: MouseEvent) => {
         const snap = event.shiftKey ? largeSnap : event.ctrlKey ? noSnap : defaultSnap;
         const x = Math.round((coord.x - offset.x)/snap)*snap;
         const y = Math.round((coord.y - offset.y)/snap)*snap;
-        selectedElement.setAttribute('transform', `translate(${x},${y})`);
+        selectedNode.x = x;
+        selectedNode.y = y;
+        reconsile(diagram);
+
         return;
     }
 
     if (selectedLine) {
+        const target = event.target as HTMLElement;
+        const draggableElement = findDraggableElement(target);
+
+        if (draggableElement) {
+            const node = getNodeForElement(draggableElement);
+
+            selectedLine.to = node;
+            reconsile(diagram);
+            return;
+        }
         var coord = getMousePosition(event);
         const snap = event.shiftKey ? largeSnap : event.ctrlKey ? noSnap : defaultSnap;
         const x = Math.round(coord.x/snap)*snap;
         const y = Math.round(coord.y/snap)*snap;
 
-        selectedLine.setAttribute('d', `M${fromPosition.x} ${fromPosition.y} L${x} ${fromPosition.y} M${x} ${fromPosition.y} L${x} ${y}`)
+        selectedLine.to = { x, y };
+
+        reconsile(diagram);
         return;
     }
 
@@ -190,27 +291,26 @@ const drag = (event: MouseEvent) => {
 };
 
 const endDrag = () => {
-    if (selectedElement) {
-        const [_, rawX, rawY] = selectedElement.getAttribute('transform').match(/translate\((\-?[\d\.]+),(\-?[\d\.]+)\)/)
-        const id = selectedElement.id;
-
-        const x = parseFloat(rawX);
-        const y = parseFloat(rawY);
-
-        const node = diagram.root.children[id];
-        node.x = x;
-        node.y = y;
-
-        reconsile(diagram);
+    if (selectedNode) {
+        const id = selectedNode.id;
+        const x = selectedNode.x;
+        const y = selectedNode.y;
 
         sendData(JSON.stringify({ username: 'James', type: 'translate', id, x, y }));
 
         selectedElement.classList.remove('selected');
         selectedElement = null;
+        selectedNode = null;
     }
 
     
     if (selectedLine) {
+        const id = selectedLine.id;
+        const from = ('id' in selectedLine.from) ? { id: selectedLine.from.id } : { x: selectedLine.from.x, y: selectedLine.from.y };
+        const to = ('id' in selectedLine.to) ? { id: selectedLine.to.id } : { x: selectedLine.to.x, y: selectedLine.to.y };
+
+        sendData(JSON.stringify({ username: 'James', type: 'addConnector', id, from, to }));
+
         selectedLine = null;
     }
 };
@@ -225,6 +325,10 @@ const root = document.createElementNS(svgNS, 'g');
 root.setAttribute('id', 'root');
 svg.appendChild(root);
 
+const connectors = document.createElementNS(svgNS, 'g');
+connectors.setAttribute('id', 'connectors');
+root.appendChild(connectors);
+
 let nodeCount = 0;
 
 const add = (nodeId: string = null, x: number = 50, y: number = 50): Element => {
@@ -236,6 +340,7 @@ const add = (nodeId: string = null, x: number = 50, y: number = 50): Element => 
     root.appendChild(group);
 
     var shape = document.createElementNS(svgNS,'rect');
+    shape.setAttribute('transform', `translate(-40,-20)`);
     shape.setAttribute('width','80');
     shape.setAttribute('height','40');
     shape.setAttribute('fill','white');
@@ -243,13 +348,9 @@ const add = (nodeId: string = null, x: number = 50, y: number = 50): Element => 
     shape.setAttribute('stroke', 'black');
     group.appendChild(shape);
 
-    
-
     var text = document.createElementNS(svgNS, 'text');
     text.setAttribute('text-anchor', 'middle');
     text.setAttribute('alignment-baseline', 'middle');
-    text.setAttribute('x', '40');
-    text.setAttribute('y', '20');
     text.setAttribute('width', '80');
     text.setAttribute('height', '40');
     text.setAttribute('visibility', 'visible');
@@ -270,6 +371,7 @@ const add = (nodeId: string = null, x: number = 50, y: number = 50): Element => 
         textdiv.style.height = '40px';
         textdiv.style.width = '80px';
         textdiv.style.textAlign = 'center';
+        textEditor.setAttribute('transform', `translate(-40,-20)`);
         textEditor.setAttribute("width", "80");
         textEditor.setAttribute("height", "40");
         var textnode = document.createTextNode(text.textContent);
@@ -326,29 +428,48 @@ const getOrCreateElement = (node: DiagramNode): Element => {
     return add(node.id, node.x, node.y);
 }
 
+const getOrCreateConnector = (node: DiagramConnectorNode): Element => {
+    const element = root.querySelector(`#${node.id}`);
+    if (element !== null) return element;
+    const newElement = document.createElementNS(svgNS, 'path') as SVGPathElement;
+    newElement.id = node.id;
+    connectors.appendChild(newElement);
+    return newElement;
+}
+
 const reconsile = (diagram: Diagram) => {
     root.querySelectorAll('g').forEach(element => {
-        if (!diagram.root.children[element.id as string]) {
+        if (element.id !== 'connectors' && !diagram.root.children[element.id as string]) {
             root.removeChild(element);
         }
     });
 
     for (const id in diagram.root.children) {
         if (Object.prototype.hasOwnProperty.call(diagram.root.children, id)) {
+            
             const node = diagram.root.children[id];
             const element = getOrCreateElement(node);
             element.setAttribute('transform', `translate(${node.x},${node.y})`);
 
-            // const textNode = element.getElementsByClassName('c-texteditor__text')[0] as HTMLElement;
-            // textNode.innerText = node.content;
             element.querySelector('text').textContent = node.content;
+        }
+    }
+
+    for (const id in diagram.root.connectors) {
+        if (Object.prototype.hasOwnProperty.call(diagram.root.connectors, id)) {
+            const connector = diagram.root.connectors[id];
+            const element = getOrCreateConnector(connector);
+            const fromPosition: Vector2 = { x: connector.from.x, y: connector.from.y };
+            const toPosition: Vector2 = { x: connector.to.x, y: connector.to.y };
+
+            element.setAttribute('d', `M${fromPosition.x} ${fromPosition.y} L${toPosition.x} ${fromPosition.y} M${toPosition.x} ${fromPosition.y} L${toPosition.x} ${toPosition.y}`);
         }
     }
 }
 
 document.getElementById('add').addEventListener('click', () => {
     const nodeId = `node${nodeCount}`;
-    diagram.root.children[nodeId] = ({ id: nodeId, children: {}, x: 50, y: 50, content: '' });
+    diagram.root.children[nodeId] = ({ id: nodeId, children: {}, x: 50, y: 50, content: '', connectors: {} });
     reconsile(diagram);
     sendData(JSON.stringify({ username: 'James', type: 'add', id: nodeId, x: 50, y: 50 }));
 });
