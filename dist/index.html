@@ -2,6 +2,7 @@
 <html>
   <head>
     <title>Getting Started</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <style>
       svg {
         -webkit-touch-callout: none;
@@ -29,15 +30,21 @@
         stroke: blue;
       }
 
-      path {
-        stroke: black;
+      path.selected {
+        stroke: blue;
       }
     </style>
   </head>
   <body>
     <svg xmlns="http://www.w3.org/2000/svg" width="500" height="500" id="canvas">
+      <style>
+        path {
+          fill: black;
+        }
+      </style>
     </svg>
     <button id="add">Add</button>
+    <button id="deleteButton" disabled="disabled">Delete</button>
     <button id="export">Export</button>
 
     <script src="main.js"></script>
